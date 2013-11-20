@@ -30,7 +30,7 @@ not support dynamic linking out-of-the-box.
 - Get `PolarSSL` library:
 
  - Get the source from [http://polarssl.org](http://polarssl.org). Enable `PBKDF2_C` in `include/polarssl/config.h` (disabled by default).
- - Cross-compile it manually for Android/ARM; Alternatively, simply use the pre-compiled libpolarssl.a, that is shipped with this package.
+ - Cross-compile it manually for Android/ARM; Alternatively, simply use the pre-compiled `libpolarssl.a`, that is shipped with this package.
  
 
 - Run `make`. The crackpin binary should appear in the `bin` directory.
