@@ -11,8 +11,8 @@ In 2012, Cannon et al. presented details about Android's encryption system
 and gave instructions on how to break it with bruteforce attacks against the PIN.
 They published their findings in form of a Python script that breaks Android
 encryption on an `x86` PC after the `userdata` and `metadata` (crypto footer) partition
-have been retrieved:
-[https://github.com/santoku/Santoku-Linux/blob/master/tools/android/android_bruteforce_stdcrypto/bruteforce_stdcrypto.py](https://github.com/santoku/Santoku-Linux/blob/master/tools/android/android_bruteforce_stdcrypto/bruteforce_stdcrypto.py)
+have been retrieved.
+[See script.](https://github.com/santoku/Santoku-Linux/blob/master/tools/android/android_bruteforce_stdcrypto/bruteforce_stdcrypto.py)
 
 Basically, we re-implemented the Python script in C and cross-compiled it for
 ARM so that we can perform bruteforce attacks directly on the phone without
