@@ -2,7 +2,10 @@
 # Requires cross-compiled PolarSSL library "libpolarssl.a"
 # Contact: tilo.mueller@informatik.uni-erlangen.de
 
- NDK := /usr/src/android/android-ndk-r8b/
+#Modify as needed
+NDK := /cygdrive/c/Android/android-ndk-r9/
+#
+
 PATH := ${PATH}:${NDK}/toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86/bin/
 ARCH := arm
 CROSS:= arm-linux-androideabi-
@@ -17,7 +20,7 @@ CFLAGS  += -I${NDK}/platforms/android-4/arch-arm/usr/include/ -nostdlib
 LDFLAGS += -nostdlib -static -lm -lc -lstdc++ -lgcc -L${NDK}/platforms/android-4/arch-arm/usr/lib/ -Wl,--entry=main,-rpath-link=${NDK}/platforms/android-4/arch-arm/usr/lib/
 
 crackpin: crackpin.c
-	$(CC) $(CFLAGS) $(OFLAGS) crackpin.c $(LDFLAGS) -o $@
+	$(CC) $(CFLAGS) $(OFLAGS) crackpin.c $(LDFLAGS) -o bin/crackpin
 
 clean:
-	rm crackpin
+	rm bin/crackpin
