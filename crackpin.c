@@ -45,6 +45,7 @@
 #define FOOTER_SIZE	65536
 #define HEADER_SIZE	32
 #define SALT_SIZE	16
+#define KEY_SIZE	48
 #define	KEY_LEN_BYTES	16
 #define IV_LEN_BYTES	16
 #define HASH_COUNT	2000
@@ -62,6 +63,9 @@ struct crypto_ftr {
 	int64_t fs_size;
 	int32_t failed_decrypt_count;
 	uint8_t crypto_type_name[64];
+	int32_t spare2;
+	uint8_t crypto_key[KEY_SIZE];
+	uint8_t crypto_salt[SALT_SIZE];
 };
 
 int decrypt_decode_key(uint8_t *kekiv, uint8_t *salt, unsigned char *pin, 
@@ -120,8 +124,8 @@ int main()
 
 	/* read crypto footer */
 	ftr = (struct crypto_ftr*)footer;	
-	encdek = footer + ftr->ftr_size;
-	salt = footer + ftr->ftr_size + ftr->keysize + 32;
+	encdek = ftr->crypto_key;
+	salt = ftr->crypto_salt;
 
 	/* print crypto footer info */
 	printf("\n   magic number: %X\n",ftr->magic);
