@@ -134,7 +134,8 @@ int main()
 	printf("    footer size: %i\n",ftr->ftr_size);
 	printf("          flags: %X\n",ftr->flags);
 	printf("       key size: %i\n",ftr->keysize);
-	printf("failed decrypts: %i\n\n",ftr->failed_decrypt_count);
+	printf("failed decrypts: %i\n",ftr->failed_decrypt_count);
+	printf("    crypto type: %s\n\n",ftr->crypto_type_name);
 	printf("encdek: ");
 	for (i=0; i<ftr->keysize; i++)
 		printf("%02x",encdek[i]);
