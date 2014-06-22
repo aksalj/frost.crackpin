@@ -39,6 +39,7 @@
 #include "polarssl/config.h"
 #include "polarssl/pbkdf2.h"
 #include "polarssl/aes.h"
+#include "libscrypt/libscrypt.h"
 
 #define FOOTER_DEVICE	"/dev/block/mmcblk0p13"
 #define HEADER_DEVICE	"/dev/block/mmcblk0p12"
@@ -50,6 +51,12 @@
 #define IV_LEN_BYTES	16
 #define HASH_COUNT	2000
 #define PIN_SIZE	4
+#define FTR_SIZE	(40+64+48+SALT_SIZE)
+
+#define SCRYPT_ADDED_MINOR	2
+#define KDF_PBKDF		1
+#define KDF_SCRYPT		2
+
 
 /* crypto footer structure (from cryptfs.h of Android sources) */
 struct crypto_ftr {
@@ -68,8 +75,20 @@ struct crypto_ftr {
 	uint8_t crypto_salt[SALT_SIZE];
 };
 
-int decrypt_decode_key(uint8_t *kekiv, uint8_t *salt, unsigned char *pin, 
+struct crypto_ftr_ext {
+	uint64_t persist_data_offset1;
+	uint64_t persist_data_offset2;
+	uint32_t persist_data_size;
+	uint8_t kdf;
+	uint8_t N_factor;
+	uint8_t r_factor;
+	uint8_t p_factor;
+};
+
+int decrypt_decode_pbkdf2_key(uint8_t *kekiv, uint8_t *salt, unsigned char *pin, 
 			const md_info_t *info_sha1, md_context_t sha1_ctx);
+int decrypt_decode_scrypt_key(uint8_t *hashbuf, uint8_t *salt, unsigned char *pin,
+			uint64_t N, uint32_t r, uint32_t p);
 
 /* 
  * crack 4-digit PINs directly on the phone
@@ -78,12 +97,14 @@ int decrypt_decode_key(uint8_t *kekiv, uint8_t *salt, unsigned char *pin,
 int main()
 {
 	struct crypto_ftr *ftr;
+	struct crypto_ftr_ext *ftr_ext=NULL;
 	uint8_t *header=NULL, *footer=NULL, *salt, *encdek, *kek;
 	int i, header_fd=-1, footer_fd=-1, error;
 	uint8_t kekiv[KEY_LEN_BYTES+IV_LEN_BYTES], iv[IV_LEN_BYTES];
 	uint8_t decdek[KEY_LEN_BYTES], decheader[HEADER_SIZE];
 	md_context_t sha1_ctx; aes_context aes_ctx;
 	const md_info_t *info_sha1;
+	uint64_t scrypt_N=0; uint32_t scrypt_r=0, scrypt_p=0;
 	unsigned char pin[PIN_SIZE+1] = {0,0,0,0,0};
 
 	/* cleanup: close header and footer mappings */
@@ -97,6 +118,7 @@ int main()
 			case 0: msg = ""; break;
 			case 3: msg = "SHA1 context error.\n"; break;
 			case 4: msg = "PBKDF2 error.\n"; break;
+			case 8: msg = "SCRYPT error.\n"; break;
 			case 5: msg = "AES error with KEK.\n"; break;
 			case 6: msg = "AES/CBC error with DEK.\n"; break;
 			case 7: msg = "\nSorry, no 4-digit PIN matches.\n\n"; break;
@@ -124,6 +146,15 @@ int main()
 
 	/* read crypto footer */
 	ftr = (struct crypto_ftr*)footer;	
+	if (ftr->minor_version < SCRYPT_ADDED_MINOR)
+		ftr = (struct crypto_ftr*)footer;
+	else {
+		ftr = (struct crypto_ftr*)footer;
+		ftr_ext = (struct crypto_ftr_ext*)(footer + FTR_SIZE);
+		scrypt_N = 1 << ftr_ext->N_factor;
+		scrypt_r = 1 << ftr_ext->r_factor;
+		scrypt_p = 1 << ftr_ext->p_factor;
+	}
 	encdek = ftr->crypto_key;
 	salt = ftr->crypto_salt;
 
@@ -142,7 +173,13 @@ int main()
 	printf("\n  salt: ");
 	for (i=0; i<SALT_SIZE; i++)
 		printf("%02x",salt[i]);
-	printf("\n\n");
+	printf("\n");
+	if (ftr->minor_version >= SCRYPT_ADDED_MINOR) {
+		printf("\n            KDF: %s", (ftr_ext->kdf == KDF_PBKDF)?"PBKDF2":"scrypt");
+		printf("\n       N factor: %2u (N=%"PRIu64")", ftr_ext->N_factor, scrypt_N);
+		printf("\n       r factor: %2u (r=%u)", ftr_ext->r_factor, scrypt_r);
+		printf("\n       p factor: %2u (p=%u)\n\n", ftr_ext->p_factor, scrypt_p);
+	}
 
 	/* cracking loop over four digits */
 	for (pin[0]='0'; pin[0]<='9'; pin[0]++)
@@ -150,12 +187,21 @@ int main()
 	for (pin[2]='0'; pin[2]<='9'; pin[2]++)
 	for (pin[3]='0'; pin[3]<='9'; pin[3]++)
 	{
-		/* print status */
-		if (pin[2] == '0' && pin[3] == '0') {
-			printf("...trying %s\n",pin);
-		}
 
-		error = decrypt_decode_key(kekiv, salt, pin, info_sha1, sha1_ctx);
+		if (ftr->minor_version < SCRYPT_ADDED_MINOR) {
+			/* print status */
+			if (pin[2] == '0' && pin[3] == '0') {
+				printf("...trying %s\n",pin);
+			}
+			error = decrypt_decode_pbkdf2_key(kekiv, salt, pin, info_sha1, sha1_ctx);
+		}
+		else {
+			/* print scrypt status more often */
+			if (pin[3] == '0') {
+				printf("...trying %s\n",pin);
+			}
+			error = decrypt_decode_scrypt_key(kekiv, salt, pin, scrypt_N, scrypt_r, scrypt_p);
+		}
 		if(error)
 			quit(error);
 
@@ -208,7 +254,7 @@ int main()
 
 int raise(int x) { return x; } /* strange NDK cross compiling bug fix */
 
-int decrypt_decode_key(uint8_t *kekiv, uint8_t *salt, unsigned char *pin,
+int decrypt_decode_pbkdf2_key(uint8_t *kekiv, uint8_t *salt, unsigned char *pin,
 			const md_info_t *info_sha1, md_context_t sha1_ctx) {
 	/* make key encryption key and iv from PIN */
 	if (!(info_sha1 = md_info_from_type(POLARSSL_MD_SHA1)) || md_init_ctx(&sha1_ctx, info_sha1)) {
@@ -216,6 +262,18 @@ int decrypt_decode_key(uint8_t *kekiv, uint8_t *salt, unsigned char *pin,
 	}
 	if (pbkdf2_hmac(&sha1_ctx, pin, PIN_SIZE, salt, SALT_SIZE, HASH_COUNT, KEY_LEN_BYTES+IV_LEN_BYTES, kekiv)) {
 		return 4;   // PBKDF2 error
+	}
+
+	return 0;
+}
+
+int decrypt_decode_scrypt_key(uint8_t *hashbuf, uint8_t *salt, unsigned char *pin, 
+			uint64_t N, uint32_t r, uint32_t p) {
+	
+	if( libscrypt_scrypt(pin, PIN_SIZE, salt, SALT_SIZE, N, r, p, 
+//          		/*@out@*/ hashbuf, SCRYPT_HASH_LEN)) {
+			/*@out@*/ hashbuf, KEY_LEN_BYTES+IV_LEN_BYTES)) {
+		return 8;
 	}
 
 	return 0;
